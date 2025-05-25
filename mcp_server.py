@@ -240,28 +240,35 @@ async def vehicle_info(license_plate: str) -> Dict:
 # Define the SearchVehiclesByCriteriaTool
 @mcp.tool(name="search_vehicles")
 async def search_vehicles_tool(
-    tozeret_nm: Optional[str] = None,
-    degem_nm: Optional[str] = None,
-    mispar_rechev: Optional[str] = None,
+    manufacturer: Optional[str] = None,
+    model: Optional[str] = None,
+    license_plate: Optional[str] = None,
     limit: int = 10,
     offset: int = 0
 ) -> Dict:
-    """Search for vehicles based on manufacturer (tozeret_nm), model (degem_nm), license plate (mispar_rechev), limit, and offset.
-    Year of manufacture (shnat_yitzur) filter has been removed due to API conflicts (409 errors).
+    """Search for vehicles based on manufacturer, model, license plate, limit, and offset.
+    Year of manufacture filter has been removed due to API conflicts (409 errors).
     Uses the datastore_search API for the Israeli government vehicle database.
+    
+    Args:
+        manufacturer: Vehicle manufacturer name (e.g., 'טויוטה אנגליה')
+        model: Vehicle model name (e.g., 'ZWE186L-DHXNBW')
+        license_plate: License plate number (e.g., '4304032')
+        limit: Maximum number of results to return (default: 10)
+        offset: Number of results to skip for pagination (default: 0)
     """
-    logger.info(f"🔧 MCP Tool Called: search_vehicles - tozeret_nm={tozeret_nm}, degem_nm={degem_nm}, mispar_rechev={mispar_rechev}, limit={limit}, offset={offset}")
+    logger.info(f"🔧 MCP Tool Called: search_vehicles - manufacturer={manufacturer}, model={model}, license_plate={license_plate}, limit={limit}, offset={offset}")
     
     if not RESOURCE_ID:
         logger.error("❌ RESOURCE_ID is not configured")
         return {"error": "RESOURCE_ID is not configured."}
     try:
-        # Call the underlying search_vehicles function, passing None for the year filter
+        # Map the user-friendly parameter names to the API parameter names
         result = await search_vehicles(
-            tozeret_nm=tozeret_nm,
-            degem_nm=degem_nm,
-            shnat_yitzur=None, # Explicitly pass None as this filter causes API conflicts
-            mispar_rechev=mispar_rechev,
+            tozeret_nm=manufacturer,  # Map manufacturer to tozeret_nm
+            degem_nm=model,          # Map model to degem_nm
+            shnat_yitzur=None,       # Explicitly pass None as this filter causes API conflicts
+            mispar_rechev=license_plate,  # Map license_plate to mispar_rechev
             limit=limit,
             offset=offset,
         )
@@ -434,7 +441,7 @@ Use the get_vehicle_by_plate tool to retrieve:
 Present the information in a clear, organized format."""
 
 @mcp.prompt()
-def search_vehicles(manufacturer: str = None, model: str = None, license_plate: str = None) -> str:
+def search_vehicles_prompt(manufacturer: str = None, model: str = None, license_plate: str = None) -> str:
     """Search for vehicles by manufacturer, model, or license plate"""
     search_params = []
     if manufacturer:
@@ -449,9 +456,9 @@ def search_vehicles(manufacturer: str = None, model: str = None, license_plate: 
     return f"""Please search for Israeli vehicles with {search_description}.
 
 Use the search_vehicles tool with appropriate parameters:
-- tozeret_nm for manufacturer (e.g., 'טויוטה אנגליה')
-- degem_nm for model (e.g., 'ZWE186L-DHXNBW')
-- mispar_rechev for license plate
+- manufacturer for manufacturer (e.g., 'טויוטה אנגליה')
+- model for model (e.g., 'ZWE186L-DHXNBW')
+- license_plate for license plate
 
 Show total found and sample results (limit to 10 for readability)."""
 

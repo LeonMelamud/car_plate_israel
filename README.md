@@ -25,11 +25,78 @@ A clean and focused Model Context Protocol (MCP) server that provides access to 
 3. **`get_dataset_license`** - Dataset license information
 4. **`list_data_licenses`** - Overview of all data licenses
 
+## MCP Client Prompt Support
+
+This server provides both **tools** and **prompts**. However, not all MCP clients support prompts. Here's the compatibility matrix:
+
+### ✅ **Clients that SUPPORT MCP Prompts:**
+
+| Client | Prompt Support | Tools | Resources | Notes |
+|--------|---------------|-------|-----------|-------|
+| **Claude Desktop App** | ✅ | ✅ | ✅ | Full MCP support - **Recommended** |
+| **Claude.ai** | ✅ | ✅ | ✅ | Web version with full support |
+| **Claude Code** | ✅ | ✅ | ❌ | Coding-focused client |
+| **Continue** | ✅ | ✅ | ✅ | Prompts as slash commands in VS Code/JetBrains |
+| **Zed** | ✅ | ❌ | ❌ | Prompts appear as slash commands |
+| **AgenticFlow** | ✅ | ✅ | ✅ | No-code AI platform |
+| **Amazon Q CLI** | ✅ | ✅ | ❌ | Terminal-based assistant |
+| **fast-agent** | ✅ | ✅ | ✅ | Python agent framework |
+| **Genkit** | ✅ | ✅ | ⚠️ | Google's GenAI SDK |
+| **Glama** | ✅ | ✅ | ✅ | AI workspace platform |
+| **Lutra** | ✅ | ✅ | ✅ | Workflow automation |
+| **mcp-use** | ✅ | ✅ | ✅ | Python library for MCP |
+| **MCPHub** | ✅ | ✅ | ✅ | Neovim plugin |
+| **MCPOmni-Connect** | ✅ | ✅ | ✅ | CLI client with ReAct |
+| **oterm** | ✅ | ✅ | ❌ | Terminal client for Ollama |
+| **Postman** | ✅ | ✅ | ✅ | API testing with MCP support |
+
+### ❌ **Clients that DON'T Support MCP Prompts (Tools Only):**
+
+| Client | Prompt Support | Tools | Resources | Notes |
+|--------|---------------|-------|-----------|-------|
+| **Cursor** | ❌ | ✅ | ❌ | Use tools directly: "Use get_vehicle_by_plate for 4304032" |
+| **VS Code GitHub Copilot** | ❌ | ✅ | ❌ | Tools and roots only |
+| **Cline** | ❌ | ✅ | ✅ | VS Code extension |
+| **BoltAI** | ❌ | ✅ | ❌ | Native AI chat client |
+| **Copilot-MCP** | ❌ | ✅ | ✅ | GitHub Copilot integration |
+| **Most other clients** | ❌ | ✅ | ❌ | Tools-only support |
+
+### 🔧 **Usage Examples by Client:**
+
+#### **Claude Desktop App / Claude.ai** (Full Support)
+```
+@get_vehicle_info 4304032
+```
+
+#### **Zed / Continue** (Slash Commands)
+```
+/get_vehicle_info 4304032
+```
+
+#### **Cursor** (Manual Tool Usage)
+```
+Use the get_vehicle_by_plate tool to look up license plate 4304032. 
+Provide complete vehicle information including make, model, year, color, 
+technical specs, inspection status, and ownership details in a clear format.
+```
+
+### 💡 **Recommendations:**
+
+- **For Full MCP Experience**: Use **Claude Desktop App** - supports all features
+- **For VS Code Users**: Use **Continue** extension - prompts become slash commands  
+- **For Cursor Users**: Use tools directly with descriptive instructions
+- **For Terminal Users**: Try **Amazon Q CLI** or **oterm**
+- **For Neovim Users**: Use **MCPHub** plugin
+
+### 🚀 **Future Support:**
+
+According to official documentation, more clients are adding prompt support. Check the [official MCP clients page](https://modelcontextprotocol.io/clients) for the latest updates.
+
 ## Search Capabilities
 
-- ✅ **Manufacturer** (`tozeret_nm`) - e.g., 'טויוטה אנגליה' (Toyota)
-- ✅ **Model** (`degem_nm`) - e.g., 'ZWE186L-DHXNBW'
-- ✅ **License Plate** (`mispar_rechev`) - e.g., '4304032'
+- ✅ **Manufacturer** (`manufacturer`) - e.g., 'טויוטה אנגליה' (Toyota)
+- ✅ **Model** (`model`) - e.g., 'ZWE186L-DHXNBW'
+- ✅ **License Plate** (`license_plate`) - e.g., '4304032'
 - ✅ **Combined Searches** - Mix multiple filters for precise results
 - ❌ **Year Filter** - Removed due to API conflicts
 
@@ -174,32 +241,7 @@ print(result)
 uv run python -c "
 from mcp_server import search_vehicles_tool
 import asyncio
-result = asyncio.run(search_vehicles_tool(tozeret_nm='טויוטה אנגליה', limit=3))
+result = asyncio.run(search_vehicles_tool(manufacturer='טויוטה אנגליה', limit=3))
 print(f'Found {result[\"total\"]} vehicles')
 "
 ```
-
-## Perfect For
-
-- 🚗 **Car Buyers** - Research vehicle history and specifications
-- 🏢 **Insurance Agents** - Verify vehicle details and ownership
-- 🔧 **Mechanics** - Access technical specifications and inspection data
-- 📊 **Fleet Managers** - Manage and track vehicle information
-- 💼 **Automotive Professionals** - Access comprehensive vehicle database
-
-## Technical Details
-
-- **Framework**: FastMCP with streamable-http transport
-- **Language**: Python 3.10+
-- **Package Manager**: uv (fast, modern Python packaging)
-- **Container**: Docker with multi-stage builds
-- **Security**: Non-root user, health checks, proper error handling
-- **Performance**: Async/await, connection pooling, optimized queries
-
-## License
-
-This project uses data from the Israeli Government Open Data Portal under the "אחר (פתוח)" (Other - Open) license. The MCP server code is available for use according to the project license.
-
----
-
-**Ready to use!** 🚀 Your Israeli vehicle data is just a prompt away. 
