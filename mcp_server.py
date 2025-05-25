@@ -1,14 +1,34 @@
 from fastmcp import FastMCP
 import httpx
 import json
+import sys
 from typing import Dict, List, Optional
 import asyncio
 import logging
 import os
 
-# Configure basic logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure enhanced logging for production observability
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Console output
+        # Add file handler if needed: logging.FileHandler('mcp_server.log')
+    ]
+)
 logger = logging.getLogger(__name__)
+
+# Constants
+API_ENDPOINT = "https://data.gov.il/api/3/action/datastore_search"
+RESOURCE_ID = "053cea08-09bc-40ec-8f7a-156f0677aff3"
+
+# Log startup information
+logger.info("=== Israel Vehicle Data MCP Server Starting ===")
+logger.info(f"Python version: {sys.version}")
+logger.info(f"Working directory: {os.getcwd()}")
+logger.info(f"Environment PORT: {os.environ.get('PORT', 'not set')}")
+logger.info(f"API Endpoint: {API_ENDPOINT}")
+logger.info(f"Resource ID: {RESOURCE_ID}")
 
 # Initialize MCP server
 mcp = FastMCP(
@@ -43,30 +63,47 @@ mcp = FastMCP(
     """
 )
 
-# Constants
-API_ENDPOINT = "https://data.gov.il/api/3/action/datastore_search"
-RESOURCE_ID = "053cea08-09bc-40ec-8f7a-156f0677aff3"
-
-
 async def fetch_vehicle_by_id(license_plate: str) -> Dict:
     """Fetch information for a specific vehicle by its license plate number."""
+    logger.info(f"🔍 Fetching vehicle data for license plate: {license_plate}")
+    start_time = asyncio.get_event_loop().time()
+    
     async with httpx.AsyncClient() as client:
         params = {
             "resource_id": RESOURCE_ID,
             "filters": json.dumps({"mispar_rechev": license_plate})
         }
-        response = await client.post(API_ENDPOINT, data=params)
-        response.raise_for_status()
-        data = response.json()
+        logger.debug(f"API request params: {params}")
         
-        if not data.get("success"):
-            raise ValueError("Failed to fetch data from API")
-        
-        records = data.get("result", {}).get("records", [])
-        if not records:
-            return {"error": "Vehicle not found"}
-        
-        return records[0]
+        try:
+            response = await client.post(API_ENDPOINT, data=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            elapsed_time = asyncio.get_event_loop().time() - start_time
+            logger.info(f"✅ API request completed in {elapsed_time:.2f}s for license plate: {license_plate}")
+            
+            if not data.get("success"):
+                logger.error(f"❌ API returned success=false for license plate: {license_plate}")
+                raise ValueError("Failed to fetch data from API")
+            
+            records = data.get("result", {}).get("records", [])
+            if not records:
+                logger.warning(f"⚠️ No vehicle found for license plate: {license_plate}")
+                return {"error": "Vehicle not found"}
+            
+            vehicle_data = records[0]
+            logger.info(f"🚗 Found vehicle: {vehicle_data.get('tozeret_nm', 'Unknown')} {vehicle_data.get('kinuy_mishari', 'Unknown')} ({vehicle_data.get('shnat_yitzur', 'Unknown')})")
+            return vehicle_data
+            
+        except httpx.HTTPError as e:
+            elapsed_time = asyncio.get_event_loop().time() - start_time
+            logger.error(f"❌ HTTP error after {elapsed_time:.2f}s for license plate {license_plate}: {e}")
+            raise
+        except Exception as e:
+            elapsed_time = asyncio.get_event_loop().time() - start_time
+            logger.error(f"❌ Unexpected error after {elapsed_time:.2f}s for license plate {license_plate}: {e}")
+            raise
 
 async def search_vehicles(
     tozeret_nm: Optional[str] = None,
@@ -77,6 +114,18 @@ async def search_vehicles(
     offset: int = 0
 ) -> Dict:
     """Search for vehicles based on various criteria."""
+    search_params = {
+        "manufacturer": tozeret_nm,
+        "model": degem_nm, 
+        "year": shnat_yitzur,
+        "license_plate": mispar_rechev,
+        "limit": limit,
+        "offset": offset
+    }
+    active_filters = {k: v for k, v in search_params.items() if v is not None and k not in ['limit', 'offset']}
+    logger.info(f"🔍 Searching vehicles with filters: {active_filters}, limit: {limit}, offset: {offset}")
+    start_time = asyncio.get_event_loop().time()
+    
     async with httpx.AsyncClient() as client:
         # Build filters
         filters = {}
@@ -101,20 +150,46 @@ async def search_vehicles(
         if filters:
             params["filters"] = json.dumps(filters)
         
-        response = await client.post(API_ENDPOINT, data=params)
-        response.raise_for_status()
-        data = response.json()
+        logger.debug(f"API search params: {params}")
         
-        if not data.get("success"):
-            raise ValueError("Failed to fetch data from API")
-        
-        result = data.get("result", {})
-        return {
-            "total": result.get("total", 0),
-            "records": result.get("records", []),
-            "limit": limit,
-            "offset": offset
-        }
+        try:
+            response = await client.post(API_ENDPOINT, data=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            elapsed_time = asyncio.get_event_loop().time() - start_time
+            
+            if not data.get("success"):
+                logger.error(f"❌ API search returned success=false with filters: {active_filters}")
+                raise ValueError("Failed to fetch data from API")
+            
+            result = data.get("result", {})
+            total_found = result.get("total", 0)
+            records_count = len(result.get("records", []))
+            
+            logger.info(f"✅ Search completed in {elapsed_time:.2f}s - Found {total_found} total vehicles, returning {records_count} records")
+            
+            if total_found > 0:
+                # Log sample of found vehicles
+                sample_vehicles = result.get("records", [])[:3]  # First 3 vehicles
+                for i, vehicle in enumerate(sample_vehicles):
+                    logger.info(f"  📋 Sample {i+1}: {vehicle.get('mispar_rechev')} - {vehicle.get('tozeret_nm')} {vehicle.get('kinuy_mishari', 'Unknown')} ({vehicle.get('shnat_yitzur')})")
+            
+            return {
+                "total": total_found,
+                "records": result.get("records", []),
+                "limit": limit,
+                "offset": offset
+            }
+            
+        except httpx.HTTPError as e:
+            elapsed_time = asyncio.get_event_loop().time() - start_time
+            logger.error(f"❌ HTTP error during search after {elapsed_time:.2f}s with filters {active_filters}: {e}")
+            raise
+        except Exception as e:
+            elapsed_time = asyncio.get_event_loop().time() - start_time
+            logger.error(f"❌ Unexpected error during search after {elapsed_time:.2f}s with filters {active_filters}: {e}")
+            raise
 
 async def fetch_available_licenses() -> Dict:
     """Fetch the list of available licenses from the CKAN API."""
@@ -175,11 +250,14 @@ async def search_vehicles_tool(
     Year of manufacture (shnat_yitzur) filter has been removed due to API conflicts (409 errors).
     Uses the datastore_search API for the Israeli government vehicle database.
     """
+    logger.info(f"🔧 MCP Tool Called: search_vehicles - tozeret_nm={tozeret_nm}, degem_nm={degem_nm}, mispar_rechev={mispar_rechev}, limit={limit}, offset={offset}")
+    
     if not RESOURCE_ID:
+        logger.error("❌ RESOURCE_ID is not configured")
         return {"error": "RESOURCE_ID is not configured."}
     try:
         # Call the underlying search_vehicles function, passing None for the year filter
-        return await search_vehicles(
+        result = await search_vehicles(
             tozeret_nm=tozeret_nm,
             degem_nm=degem_nm,
             shnat_yitzur=None, # Explicitly pass None as this filter causes API conflicts
@@ -187,8 +265,10 @@ async def search_vehicles_tool(
             limit=limit,
             offset=offset,
         )
+        logger.info(f"✅ MCP Tool Success: search_vehicles returned {result.get('total', 0)} total results")
+        return result
     except Exception as e:
-        logger.error(f"Error in search_vehicles_tool: {e}", exc_info=True)
+        logger.error(f"❌ MCP Tool Error: search_vehicles failed: {e}", exc_info=True)
         return {"error": str(e)}
 
 @mcp.tool(name="get_vehicle_by_plate")
@@ -204,9 +284,17 @@ async def get_vehicle_by_plate_tool(
     Returns:
         Dictionary containing vehicle information or an error if not found.
     """
+    logger.info(f"🔧 MCP Tool Called: get_vehicle_by_plate - mispar_rechev={mispar_rechev}")
+    
     try:
-        return await fetch_vehicle_by_id(mispar_rechev)
+        result = await fetch_vehicle_by_id(mispar_rechev)
+        if "error" in result:
+            logger.warning(f"⚠️ MCP Tool Warning: get_vehicle_by_plate - {result['error']}")
+        else:
+            logger.info(f"✅ MCP Tool Success: get_vehicle_by_plate found vehicle {result.get('tozeret_nm', 'Unknown')} {result.get('kinuy_mishari', 'Unknown')}")
+        return result
     except Exception as e:
+        logger.error(f"❌ MCP Tool Error: get_vehicle_by_plate failed for {mispar_rechev}: {e}", exc_info=True)
         return {"error": str(e)}
 
 @mcp.tool(name="list_available_licenses")
@@ -217,9 +305,15 @@ async def list_available_licenses_tool() -> List[Dict]:
     Returns:
         A list of dictionaries, where each dictionary represents a license.
     """
+    logger.info("🔧 MCP Tool Called: list_available_licenses")
+    
     try:
-        return await fetch_available_licenses()
+        result = await fetch_available_licenses()
+        license_count = len(result) if isinstance(result, list) else 0
+        logger.info(f"✅ MCP Tool Success: list_available_licenses returned {license_count} licenses")
+        return result
     except Exception as e:
+        logger.error(f"❌ MCP Tool Error: list_available_licenses failed: {e}", exc_info=True)
         return {"error": str(e)}
 
 @mcp.tool(name="get_vehicle_dataset_license")
@@ -230,12 +324,15 @@ async def get_vehicle_dataset_license_tool() -> Dict:
     Returns:
         A dictionary containing license details (e.g., title, id, URL) or an error.
     """
+    logger.info("🔧 MCP Tool Called: get_vehicle_dataset_license")
+    
     try:
         # Step 1: Get resource details to find the parent package_id
         resource_details = await fetch_resource_details(RESOURCE_ID)
         package_id = resource_details.get("package_id")
         
         if not package_id:
+            logger.error(f"❌ Could not determine package_id for resource {RESOURCE_ID}")
             return {"error": f"Could not determine package_id for resource {RESOURCE_ID}"}
             
         # Step 2: Get package details to find the license information
@@ -252,16 +349,20 @@ async def get_vehicle_dataset_license_tool() -> Dict:
              pass
 
         if not license_title and not license_id:
+            logger.error(f"❌ No license information found for package {package_id}")
             return {"error": f"No license information found for package {package_id}"}
-            
-        return {
+        
+        result = {
             "package_id": package_id,
             "resource_id": RESOURCE_ID,
             "license_title": license_title,
             "license_id": license_id,
             "license_url": license_url or "Not explicitly provided in package details"
         }
+        logger.info(f"✅ MCP Tool Success: get_vehicle_dataset_license found license '{license_title}' ({license_id})")
+        return result
     except Exception as e:
+        logger.error(f"❌ MCP Tool Error: get_vehicle_dataset_license failed: {e}", exc_info=True)
         return {"error": str(e)}
     
 
@@ -295,20 +396,28 @@ def main_streamable_http():
     This is called when mcp_server.py is executed directly.
     """
     mcp_app = get_mcp_application()
-    print("Starting MCP server (streamable-http transport)...")
-
+    
     # Get port from environment variable or default
     port = int(os.environ.get("PORT", 9876))
-
-    # Assuming mcp_app.run() is a blocking call that starts its own event loop (via anyio).
-    mcp_app.run(
-        transport="streamable-http",
-        #host="127.0.0.1", for local testing
-        #port=8765,
-        host="0.0.0.0", # Listen on all available interfaces for cloud deployment
-        port=port,
-        path="/mcp"
-    )
+    host = "0.0.0.0"  # Listen on all available interfaces for cloud deployment
+    
+    logger.info(f"🚀 Starting MCP server (streamable-http transport)")
+    logger.info(f"📡 Server will listen on {host}:{port}/mcp")
+    logger.info(f"🌐 Access URL: http://{host}:{port}/mcp")
+    
+    try:
+        # Assuming mcp_app.run() is a blocking call that starts its own event loop (via anyio).
+        mcp_app.run(
+            transport="streamable-http",
+            host=host,
+            port=port,
+            path="/mcp"
+        )
+    except KeyboardInterrupt:
+        logger.info("🛑 Server shutdown requested by user (Ctrl+C)")
+    except Exception as e:
+        logger.error(f"❌ Server startup failed: {e}", exc_info=True)
+        raise
 
 # Vehicle Information Prompts - One per tool
 @mcp.prompt()
