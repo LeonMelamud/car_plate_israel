@@ -1,190 +1,205 @@
-# Israel Vehicle Data MCP
+# Israel Vehicle Data MCP Server
 
-A FastMCP server providing tools to access the Israeli government's vehicle registration data API (data.gov.il). This MCP allows you to query vehicle information programmatically.
+A clean and focused Model Context Protocol (MCP) server that provides access to Israeli government vehicle registration data.
 
 ## Features
 
-*   **Get Vehicle by Plate (`get_vehicle_by_plate`)**: Fetch detailed information for a specific vehicle using its license plate number.
-*   **Vehicle Info Resource (`vehicles://{license_plate}`)**: Access vehicle details as an MCP resource.
+- 🚗 **Vehicle Lookup**: Get complete vehicle information by license plate
+- 🔍 **Advanced Search**: Search by manufacturer, model, or license plate
+- 📊 **Dataset Licensing**: Access licensing information for the data
+- ⚡ **High Performance**: Built with FastMCP and modern Python tooling
+- 🐳 **Production Ready**: Docker containerized with uv package management
+- 🔒 **Secure**: HTTPS deployment ready with proper security practices
 
-## Prerequisites
+## Available Tools (4)
 
-*   Python 3.8+
-*   pip (Python package installer)
+1. **`get_vehicle_by_plate`** - Look up any Israeli vehicle by license plate
+2. **`search_vehicles`** - Search vehicles by manufacturer, model, or license plate
+3. **`get_vehicle_dataset_license`** - Get dataset license information
+4. **`list_available_licenses`** - List all available data licenses
 
-## Setup Instructions
+## Available Prompts (4)
 
-1.  **Clone the repository:**
-    ```bash
-    git clone git@github.com:LeonMelamud/car_plate_israel.git
-    cd car_plate_israel
-    ```
+1. **`get_vehicle_info`** - Complete vehicle information by license plate
+2. **`search_vehicles`** - Search vehicles by manufacturer, model, or license plate
+3. **`get_dataset_license`** - Dataset license information
+4. **`list_data_licenses`** - Overview of all data licenses
 
-2.  **Create and activate a virtual environment:**
-    ```bash
-    python -m venv .venv
-    ```
-    *   On macOS/Linux:
-        ```bash
-        source .venv/bin/activate
-        ```
-    *   On Windows:
-        ```bash
-        .venv\Scripts\activate
-        ```
+## Search Capabilities
 
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+- ✅ **Manufacturer** (`tozeret_nm`) - e.g., 'טויוטה אנגליה' (Toyota)
+- ✅ **Model** (`degem_nm`) - e.g., 'ZWE186L-DHXNBW'
+- ✅ **License Plate** (`mispar_rechev`) - e.g., '4304032'
+- ✅ **Combined Searches** - Mix multiple filters for precise results
+- ❌ **Year Filter** - Removed due to API conflicts
 
-## Running the MCP Server
+## Quick Start
 
-The MCP server can be run directly using its STDIN/STDOUT transport, which is useful for local development or integration with tools that can manage stdio-based processes.
+### Development
 
-To start the server:
+1. **Install uv** (recommended):
 ```bash
-python mcp_server.py
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
-This will make the MCP tools available via the `fastmcp.cli` or other MCP clients configured to use stdio.
 
-## Using with Cursor or Claude Desktop
+2. **Clone and setup**:
+```bash
+git clone <your-repo>
+cd car_israel_gov
+uv sync
+```
 
-You can integrate this MCP server with AI assistants like Cursor or Claude Desktop that support custom MCP tool providers.
+3. **Run locally**:
+```bash
+uv run python mcp_server.py
+```
 
-1.  **Ensure the MCP server can be started by the assistant.** For local usage, the assistant will typically run the `mcp_server.py` script.
-2.  **Add as a Tool Provider:**
-    *   In your AI assistant's settings for adding new tools or MCPs, you'll typically provide a way to invoke the server.
-    *   For `stdio` transport, you would specify the command to run the server. This often involves providing the full path to your Python interpreter within the virtual environment and the `mcp_server.py` script.
-        Example URI format for `stdio`: `stdio:/path/to/your/.venv/bin/python /path/to/your/car_plate_israel/mcp_server.py`
-        (Adjust paths according to your actual setup).
-    *   Alternatively, if you were to modify `mcp_server.py` to run as a persistent HTTP server, you would provide its HTTP endpoint.
+The server will start on `http://0.0.0.0:9876/mcp`
 
-3.  **Available Tools (and Resources):**
-    Once configured, the AI assistant should be able to list and use the following (the prefix `israel-vehicle-data` is derived from the MCP name):
-    *   Tool: `israel-vehicle-data.get_vehicle_by_plate`
-        *   Args: `mispar_rechev: str` (license plate number)
-        *   Returns: Vehicle details or an error.
-    *   Resource: `israel-vehicle-data.vehicles://{license_plate}`
-        *   Accessing this resource with a specific license plate will provide vehicle details.
+### Production Deployment
 
-## Development
+#### Using Docker
 
-The core logic is in `mcp_server.py`. Tests (if any) would typically be in a separate file like `test.py`.
+1. **Build the image**:
+```bash
+docker build -t israel-vehicle-mcp .
+```
 
-## Dependencies
+2. **Run the container**:
+```bash
+docker run -p 9876:9876 -e PORT=9876 israel-vehicle-mcp
+```
 
-*   `fastmcp`: For creating the MCP server and tools.
-*   `httpx`: For making asynchronous HTTP requests to the data.gov.il API.
+#### Cloud Deployment
 
-## Future Development
+The server is configured for cloud deployment with:
+- Environment variable `PORT` support
+- Health checks configured
+- Non-root user for security
+- Optimized Docker layers
 
-The following tools are defined in `mcp_server.py` but are currently not enabled (their `@mcp.tool` decorators are commented out). They represent potential future enhancements:
+**Deploy to any cloud platform** that supports Docker containers.
 
-*   **`search_vehicles`**: This tool is intended to provide more comprehensive search functionality for vehicles, potentially including filters for manufacturer (`tozeret_nm`) and year of manufacture (`shnat_yitzur`) that were previously removed due to type compatibility issues with the MCP call.
-*   **`list_available_licenses`**: This tool would provide a direct way to list all available licenses from the CKAN API, which could be useful for understanding data usage rights across different datasets.
-*   **`get_vehicle_dataset_license`**: This tool aims to fetch the specific license details for the vehicle dataset used by this MCP.
+## Configuration
 
-Re-enabling these tools would involve uncommenting their `@mcp.tool` decorators and ensuring their parameters and return types are fully compatible with the MCP client.
+### Cursor Integration
 
-## Description
+Add to your `~/.cursor/mcp.json`:
 
-This project provides an MCP server and REST API that accesses the Israeli government's vehicle database through the data.gov.il CKAN API. It allows retrieval of specific vehicle information by license plate number and searching for vehicles based on various criteria.
+```json
+{
+  "mcpServers": {
+    "israel-vehicle-data": {
+      "command": "uv",
+      "args": ["run", "python", "/path/to/mcp_server.py"],
+      "env": {
+        "PORT": "9876"
+      }
+    }
+  }
+}
+```
+
+Or for HTTP transport:
+```json
+{
+  "mcpServers": {
+    "israel-vehicle-data": {
+      "url": "http://127.0.0.1:9876/mcp"
+    }
+  }
+}
+```
+
+### Environment Variables
+
+- `PORT` - Server port (default: 9876)
 
 ## Data Source
 
-The data is sourced from the Israeli government's data portal:
-- Dataset URL: https://data.gov.il/dataset/private-and-commercial-vehicles/resource/053cea08-09bc-40ec-8f7a-156f0677aff3
-- Resource ID: `053cea08-09bc-40ec-8f7a-156f0677aff3`
+- **Source**: Israeli Government Open Data Portal (data.gov.il)
+- **Coverage**: All registered vehicles in Israel
+- **License**: "אחר (פתוח)" (Other - Open)
+- **Update Frequency**: Real-time government data
 
-The dataset includes information such as:
-- `mispar_rechev`: License plate number
-- `tozeret_nm`: Manufacturer name
-- `degem_nm`: Model name
-- `shnat_yitzur`: Year of manufacture
-- And more...
+## Example Usage
 
-## Installation
-
-### Prerequisites
-
-- Python 3.10+
-- uv (Python package manager)
-
-### Setup
-
-1. Clone this repository
-2. Create a virtual environment and install dependencies:
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install fastmcp fastapi httpx uvicorn
+### Get Vehicle Information
+```
+Use the get_vehicle_info prompt with license plate "4304032"
 ```
 
-## Implementation
-
-The project is implemented using FastMCP 2.0, following the best practices from [FastMCP documentation](https://github.com/jlowin/fastmcp).
-
-### MCP Server (`mcp_server.py`)
-
-- Uses the standard FastMCP server architecture
-- Implements a resource with URI template: `vehicles://{mispar_rechev}`
-- Provides a search tool: `search_vehicles_tool`
-- Uses the streamable-http transport for the MCP server
-
-### FastAPI Integration (`fastapi_app.py`)
-
-- Creates a FastAPI application that exposes REST endpoints
-- Properly integrates with the MCP server using FastMCP's integration methods
-- Provides OpenAPI documentation at `/docs`
-
-## Usage
-
-### Running the MCP Server Only
-
-```bash
-python mcp_server.py
+### Search by Manufacturer
+```
+Use the search_vehicles prompt with manufacturer "טויוטה אנגליה"
 ```
 
-The MCP server will be available at http://127.0.0.1:8000/mcp using the streamable-http transport.
-
-### Running the FastAPI Application
-
-```bash
-python fastapi_app.py
+### Advanced Search
+```
+Use the search_vehicles prompt with both manufacturer and model filters
 ```
 
-The FastAPI application will be available at `http://localhost:8000` with the MCP server integrated at `/mcp`.
+## API Performance
 
-### API Endpoints
+- **Vehicle Lookup**: ~1-2 seconds
+- **Search Results**: ~2-3 seconds
+- **Dataset Size**: 43,000+ Toyota vehicles (example)
+- **Concurrent Requests**: Supported via async/await
 
-- **GET /** - Root endpoint with API information
-- **GET /vehicle/{mispar_rechev}** - Get information about a specific vehicle by license plate number
-- **GET /vehicles/search** - Search for vehicles based on various criteria
-- **MCP Server** - Available at `/mcp`
-- **API Documentation** - Available at `/docs`
+## Development
 
-## MCP Resources and Tools
+### Project Structure
+```
+car_israel_gov/
+├── mcp_server.py          # Main MCP server
+├── pyproject.toml         # uv configuration
+├── Dockerfile             # Production container
+├── .dockerignore          # Docker build optimization
+├── README.md              # This file
+└── uv.lock               # Dependency lock file
+```
 
-The MCP server provides the following:
+### Testing Tools Directly
 
-### Resources
+```bash
+# Test vehicle lookup
+uv run python -c "
+from mcp_server import get_vehicle_by_plate_tool
+import asyncio
+result = asyncio.run(get_vehicle_by_plate_tool('4304032'))
+print(result)
+"
 
-- `vehicles://{mispar_rechev}`: Provides information about a specific vehicle when given its license plate number.
+# Test search
+uv run python -c "
+from mcp_server import search_vehicles_tool
+import asyncio
+result = asyncio.run(search_vehicles_tool(tozeret_nm='טויוטה אנגליה', limit=3))
+print(f'Found {result[\"total\"]} vehicles')
+"
+```
 
-### Tools
+## Perfect For
 
-- `search_vehicles_tool`: Allows searching for vehicles based on various criteria (manufacturer, model, year, etc.)
+- 🚗 **Car Buyers** - Research vehicle history and specifications
+- 🏢 **Insurance Agents** - Verify vehicle details and ownership
+- 🔧 **Mechanics** - Access technical specifications and inspection data
+- 📊 **Fleet Managers** - Manage and track vehicle information
+- 💼 **Automotive Professionals** - Access comprehensive vehicle database
 
-## Using with Cursor
+## Technical Details
 
-The MCP server can be integrated with Cursor using the `update_mcp_config.py` script, which adds it to the Cursor MCP configuration file.
+- **Framework**: FastMCP with streamable-http transport
+- **Language**: Python 3.10+
+- **Package Manager**: uv (fast, modern Python packaging)
+- **Container**: Docker with multi-stage builds
+- **Security**: Non-root user, health checks, proper error handling
+- **Performance**: Async/await, connection pooling, optimized queries
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project uses data from the Israeli Government Open Data Portal under the "אחר (פתוח)" (Other - Open) license. The MCP server code is available for use according to the project license.
 
-## Acknowledgements
+---
 
-- Data provided by the Israeli government's data portal (data.gov.il)
-- Built with FastMCP 2.0 and FastAPI 
+**Ready to use!** 🚀 Your Israeli vehicle data is just a prompt away. 

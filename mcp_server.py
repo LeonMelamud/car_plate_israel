@@ -4,19 +4,50 @@ import json
 from typing import Dict, List, Optional
 import asyncio
 import logging
+import os
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Initialize MCP server
-mcp = FastMCP(name="Israel Vehicle Data MCP")
+mcp = FastMCP(
+    name="Israel Vehicle Data MCP",
+    instructions="""
+    A comprehensive Model Context Protocol (MCP) server for accessing Israeli government vehicle registration data.
+    
+    This server provides:
+    - Vehicle lookup by license plate number
+    - Vehicle search by model name
+    - Comprehensive vehicle information including make, model, year, color, technical specs
+    - Inspection and registration status
+    - Dataset licensing information
+    - Multiple specialized prompts for different use cases
+    
+    Data source: Israeli Government Open Data Portal (data.gov.il)
+    Coverage: All registered vehicles in Israel
+    
+    Available tools:
+    - get_vehicle_by_plate: Look up any Israeli vehicle by license plate
+    - search_vehicles: Search vehicles by manufacturer, model, or license plate
+    - get_vehicle_dataset_license: Get dataset license information
+    - list_available_licenses: List all available data licenses
+    
+    Available prompts (4 total):
+    - get_vehicle_info: Complete vehicle information by license plate
+    - search_vehicles: Search vehicles by manufacturer, model, or license plate
+    - get_dataset_license: Dataset license information
+    - list_data_licenses: Overview of all data licenses
+    
+    Perfect for: Car buyers, insurance agents, mechanics, fleet managers, and anyone needing Israeli vehicle data.
+    """
+)
 
 # Constants
 API_ENDPOINT = "https://data.gov.il/api/3/action/datastore_search"
 RESOURCE_ID = "053cea08-09bc-40ec-8f7a-156f0677aff3"
 
-# Helper functions for interacting with the CKAN API
+
 async def fetch_vehicle_by_id(license_plate: str) -> Dict:
     """Fetch information for a specific vehicle by its license plate number."""
     async with httpx.AsyncClient() as client:
@@ -132,26 +163,26 @@ async def vehicle_info(license_plate: str) -> Dict:
         return {"error": str(e)}
 
 # Define the SearchVehiclesByCriteriaTool
-#@mcp.tool(name="search_vehicles")
+@mcp.tool(name="search_vehicles")
 async def search_vehicles_tool(
+    tozeret_nm: Optional[str] = None,
     degem_nm: Optional[str] = None,
     mispar_rechev: Optional[str] = None,
     limit: int = 10,
     offset: int = 0
 ) -> Dict:
-    """Search for vehicles based on model (degem_nm), license plate (mispar_rechev), limit, and offset.
-    Manufacturer (tozeret_nm) and year of manufacture (shnat_yitzur) filters have been removed due to persistent type issues when called via MCP.
+    """Search for vehicles based on manufacturer (tozeret_nm), model (degem_nm), license plate (mispar_rechev), limit, and offset.
+    Year of manufacture (shnat_yitzur) filter has been removed due to API conflicts (409 errors).
     Uses the datastore_search API for the Israeli government vehicle database.
     """
     if not RESOURCE_ID:
         return {"error": "RESOURCE_ID is not configured."}
     try:
-        # Call the underlying search_vehicles function, passing None for the removed filters
+        # Call the underlying search_vehicles function, passing None for the year filter
         return await search_vehicles(
-            resource_id=RESOURCE_ID,
-            tozeret_nm=None, # Explicitly pass None as this filter is removed from tool signature
+            tozeret_nm=tozeret_nm,
             degem_nm=degem_nm,
-            shnat_yitzur=None, # Explicitly pass None as this filter is removed from tool signature
+            shnat_yitzur=None, # Explicitly pass None as this filter causes API conflicts
             mispar_rechev=mispar_rechev,
             limit=limit,
             offset=offset,
@@ -178,7 +209,7 @@ async def get_vehicle_by_plate_tool(
     except Exception as e:
         return {"error": str(e)}
 
-#@mcp.tool(name="list_available_licenses")
+@mcp.tool(name="list_available_licenses")
 async def list_available_licenses_tool() -> List[Dict]:
     """
     Fetches the list of all available licenses for datasets on data.gov.il.
@@ -191,7 +222,7 @@ async def list_available_licenses_tool() -> List[Dict]:
     except Exception as e:
         return {"error": str(e)}
 
-#@mcp.tool(name="get_vehicle_dataset_license")
+@mcp.tool(name="get_vehicle_dataset_license")
 async def get_vehicle_dataset_license_tool() -> Dict:
     """
     Fetches the license information for the specific vehicle dataset used by this MCP.
@@ -232,6 +263,7 @@ async def get_vehicle_dataset_license_tool() -> Dict:
         }
     except Exception as e:
         return {"error": str(e)}
+    
 
 def get_mcp_application() -> FastMCP:
     """
@@ -257,30 +289,97 @@ def main_stdio():
     # Assuming mcp_app.run() is a blocking call that starts its own event loop (via anyio).
     mcp_app.run(transport="stdio")
 
+def main_streamable_http():
+    """
+    Main function to run the MCP server using Streamable HTTP transport.
+    This is called when mcp_server.py is executed directly.
+    """
+    mcp_app = get_mcp_application()
+    print("Starting MCP server (streamable-http transport)...")
+
+    # Get port from environment variable or default
+    port = int(os.environ.get("PORT", 9876))
+
+    # Assuming mcp_app.run() is a blocking call that starts its own event loop (via anyio).
+    mcp_app.run(
+        transport="streamable-http",
+        #host="127.0.0.1", for local testing
+        #port=8765,
+        host="0.0.0.0", # Listen on all available interfaces for cloud deployment
+        port=port,
+        path="/mcp"
+    )
+
+# Vehicle Information Prompts - One per tool
+@mcp.prompt()
+def get_vehicle_info(license_plate: str) -> str:
+    """Get complete vehicle information by license plate"""
+    return f"""Please look up complete information for Israeli vehicle with license plate {license_plate}.
+
+Use the get_vehicle_by_plate tool to retrieve:
+- Basic info (make, model, year, color)
+- Technical specs (engine, tires, VIN)
+- Inspection and registration status
+- Ownership details
+
+Present the information in a clear, organized format."""
+
+@mcp.prompt()
+def search_vehicles(manufacturer: str = None, model: str = None, license_plate: str = None) -> str:
+    """Search for vehicles by manufacturer, model, or license plate"""
+    search_params = []
+    if manufacturer:
+        search_params.append(f"manufacturer: {manufacturer}")
+    if model:
+        search_params.append(f"model: {model}")
+    if license_plate:
+        search_params.append(f"license plate: {license_plate}")
+    
+    search_description = " and ".join(search_params) if search_params else "all vehicles"
+    
+    return f"""Please search for Israeli vehicles with {search_description}.
+
+Use the search_vehicles tool with appropriate parameters:
+- tozeret_nm for manufacturer (e.g., 'טויוטה אנגליה')
+- degem_nm for model (e.g., 'ZWE186L-DHXNBW')
+- mispar_rechev for license plate
+
+Show total found and sample results (limit to 10 for readability)."""
+
+@mcp.prompt()
+def get_dataset_license() -> str:
+    """Get information about the vehicle dataset license"""
+    return f"""Please provide information about the Israeli vehicle dataset license and usage terms.
+
+Use the get_vehicle_dataset_license tool to show:
+- License type and title
+- Usage permissions and restrictions
+- Data source attribution requirements
+
+This helps understand how the vehicle data can be legally used."""
+
+@mcp.prompt()
+def list_data_licenses() -> str:
+    """Get overview of all available data licenses"""
+    return f"""Please provide an overview of all available data licenses on the Israeli government data portal.
+
+Use the list_available_licenses tool to show:
+- Different license types available
+- Common license terms
+- How to choose appropriate license for different use cases
+
+This helps understand the broader licensing landscape for Israeli government data."""
+
 if __name__ == "__main__":
-    print("Executing mcp_server.py directly, attempting to start stdio server.")
+    print("Executing mcp_server.py directly, attempting to start server.")
     try:
-        # Call main_stdio directly, without asyncio.run()
-        main_stdio()
+        # Call directly, without asyncio.run()
+        main_streamable_http()
+        #main_stdio()
     except KeyboardInterrupt:
-        print("\nKeyboard interrupt received. Shutting down stdio server.")
+        print("\nKeyboard interrupt received. Shutting down server.")
     except Exception as e:
         print(f"Error during stdio server execution: {e}")
         import traceback
         traceback.print_exc()
 
-# Example of how you might have had your server run previously (for context, will be removed/replaced by above)
-# Original server startup code, if different, would be replaced by the if __name__ == "__main__" block.
-# For example, if you had:
-# server = FastMCP()
-# server.add_tool(...)
-# asyncio.run(server.run_stdio())
-# This logic is now encapsulated in get_mcp_application() and the main_stdio() + if __name__ block.
-
-# Example of how you might have had your server run previously (for context, will be removed/replaced by above)
-# Original server startup code, if different, would be replaced by the if __name__ == "__main__" block.
-# For example, if you had:
-# server = FastMCP()
-# server.add_tool(...)
-# asyncio.run(server.run_stdio())
-# This logic is now encapsulated in get_mcp_application() and the main_stdio() + if __name__ block. 
